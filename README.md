@@ -1,58 +1,68 @@
+<div align="center">
+
+<img src="docs/icon.svg" width="72" alt="">
+
 # Mass Tweet Deleter
 
-Delete all your tweets, replies and reposts on X (Twitter) for free. It's a small browser extension: sign in to X as usual, click *Delete everything on my profile*, and leave the tab open. No archive, no API key, no third-party server, no password handed to anyone.
+Delete all your posts, replies and reposts on X. Free, open source, and it runs only in your browser.
 
-> **Warning:** deleted posts are gone for good.
+[![CI](https://github.com/gcbra/mass-tweet-deleter/actions/workflows/ci.yml/badge.svg)](https://github.com/gcbra/mass-tweet-deleter/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/gcbra/mass-tweet-deleter)](https://github.com/gcbra/mass-tweet-deleter/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-## How it works
+<img src="docs/screenshot.png" alt="The Mass Tweet Deleter panel: the start screen, a run in progress with deleted posts crossed out, and the finished screen in dark mode">
 
-The extension opens your profile's *Replies* tab and scrolls down it. Every post by you is deleted with the same request X's own Delete button sends, and every repost is undone with X's *Undo repost* button. Everything happens in your own signed-in x.com tab; nothing is sent anywhere except x.com.
+</div>
 
-Have your X archive? You can feed it `tweets.js` instead: that's faster and reaches posts X no longer shows on your profile.
+- **No archive needed.** It goes through your profile and deletes what it finds. Have your X archive? Use it for a faster run.
+- **No API key, no account, no server.** It works with the X session you're already signed in to.
+- **You can watch it work.** Each post is crossed out as it's deleted, and you can stop at any time.
+
+> **Deleted posts are gone for good.** Download your X archive first if you want a copy.
 
 ## Install
 
-Download `mass-tweet-deleter-extension.zip` from the [latest release](../../releases/latest) and unzip it.
+Download `mass-tweet-deleter-extension.zip` from the [latest release](https://github.com/gcbra/mass-tweet-deleter/releases/latest) and unzip it.
 
-- **Chrome, Edge, Brave:** open `chrome://extensions`, turn on *Developer mode*, click *Load unpacked* and select the unzipped folder. Pin the red trash icon from the puzzle-piece menu.
-- **Firefox (128+):** open `about:debugging#/runtime/this-firefox`, click *Load Temporary Add-on* and select `manifest.json` in the unzipped folder. Firefox removes temporary add-ons when it restarts.
+**Chrome, Edge, Brave:** open `chrome://extensions`, turn on *Developer mode*, click *Load unpacked* and select the unzipped folder. Then pin the eraser icon from the puzzle-piece menu.
+
+**Firefox 128+:** open `about:debugging#/runtime/this-firefox`, click *Load Temporary Add-on* and pick `manifest.json` from the unzipped folder. Firefox removes temporary add-ons when it restarts.
 
 ## Use
 
-1. **Click the red trash icon** in your toolbar. It opens x.com with the deleter panel in the top right.
-2. **Sign in.** If you're not signed in, click *Log in to X* and sign in on X's own page. The panel comes back and shows your account.
-3. **Click *Delete everything on my profile*.** Check your @handle, tick the box and press *Delete all my posts*.
-4. **Leave the tab open.** The panel jumps to your Replies tab and works its way down. Press *Stop* at any time.
-5. **Scan again when it finishes.** X only lists roughly your newest 3,200 posts at a time, so big accounts need a few rounds. *Scan again* starts the next one.
+1. Click the eraser icon. x.com opens with the panel in the top right.
+2. Not signed in? Click *Log in to X* and sign in on X's own page. The panel comes back.
+3. Check your handle, tick the box and click *Delete all my posts*.
+4. Keep the tab open while it works. Minimize the panel if it's in your way.
+5. When it says *All done*, click *Scan again*. X only lists about 3,200 of your newest posts at a time, so big accounts take a few rounds.
 
-### With your archive (optional)
+**Using your archive instead:** request it from *Settings → Your account → Download an archive of your data* (X can take a day). In the panel, choose *Use it instead* and pick `data/tweets.js`, plus any `tweets-part1.js`, `tweets-part2.js` files.
 
-On x.com go to *Settings → Your account → Download an archive of your data* and wait for X's email (it can take a day). In the panel choose *Use my X archive* and pick `data/tweets.js` from the unzipped archive, plus any `tweets-part1.js`, `tweets-part2.js`...
+**No extension?** Open x.com signed in, open the browser console (`Cmd+Option+J` on Mac, `Ctrl+Shift+J` on Windows and Linux), paste the contents of [`extension/delete-tweets.js`](extension/delete-tweets.js) and press Enter. Chrome may ask you to type `allow pasting` first. The profile scan reloads the page once; paste again there and it carries on.
 
-### No extension? Use the console
+## How it works
 
-Open x.com signed in, open the browser console (`Cmd+Option+J` on Mac, `Ctrl+Shift+J` on Windows/Linux in Chrome), paste all of [`delete-tweets.js`](delete-tweets.js) and press Enter. Chrome may ask you to type `allow pasting` first. The same panel appears. Profile mode reloads the page once to open your Replies tab: paste the script again there and it carries on.
+The panel opens your profile's *Replies* tab and scrolls down it. Your own posts are deleted with the same request X's Delete button sends. Reposts are undone with X's own *Undo repost* button. With an archive, it skips the scrolling and deletes every post ID listed in `tweets.js`.
 
-## Good to know
+All of this happens in your x.com tab. The extension can only access x.com, sends nothing anywhere else, and keeps no data. See [PRIVACY.md](PRIVACY.md).
 
-- Likes, bookmarks and DMs are not touched.
-- Profile mode deletes about one post per second or two. Leave the tab in front if your browser slows down background tabs.
-- If X rate-limits you, the panel waits and carries on by itself.
-- The extension can only access x.com, and only does anything when you click its icon.
-- It relies on x.com's page layout and internal web API. If X changes them, it will stop working until it's updated. Please open an issue.
-- Automating actions on X may break its terms of service. Use at your own risk.
-- Read the code before you run it. It is two short files: [`delete-tweets.js`](delete-tweets.js) and [`background.js`](background.js).
+## FAQ
 
-## Development
+**Will this get my account banned?** Automating actions on X may break its terms of service. The tool deletes at a steady pace and waits whenever X asks it to slow down, but use it at your own risk.
+
+**Does it delete likes or DMs?** No. Only posts, replies and reposts.
+
+**It stopped working.** X changes its site often. Check for a newer [release](https://github.com/gcbra/mass-tweet-deleter/releases) or [open an issue](https://github.com/gcbra/mass-tweet-deleter/issues/new/choose) with the message the panel showed.
+
+**Is it safe to run?** Read the code first. It's two short files: [`delete-tweets.js`](extension/delete-tweets.js) and [`background.js`](extension/background.js).
+
+## Contributing
+
+Bug reports and pull requests are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md). To report a security problem, see [SECURITY.md](SECURITY.md).
 
 ```bash
-node --test
+npm test        # unit tests
+npm run lint    # Mozilla's extension linter
 ```
 
-Load the repo folder itself as an unpacked extension to try changes.
-
-Inspired by [TweetXer](https://github.com/lucahammer/tweetXer).
-
-## License
-
-[MIT](LICENSE)
+Inspired by [TweetXer](https://github.com/lucahammer/tweetXer). Released under the [MIT License](LICENSE).

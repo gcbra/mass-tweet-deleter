@@ -1,0 +1,30 @@
+name: Something isn't working
+description: The panel shows an error, gets stuck, or doesn't delete posts.
+body:
+  - type: dropdown
+    id: browser
+    attributes:
+      label: Browser
+      options: [Chrome, Edge, Brave, Firefox, Other]
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Which way were you deleting?
+      options: [My profile (no archive), My X archive, Pasted into the console]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: Copy the exact message from the panel if there is one.
+    validations:
+      required: true
+  - type: textarea
+    id: console
+    attributes:
+      label: Browser console output
+      description: Open the console (Cmd+Option+J on Mac, Ctrl+Shift+J on Windows/Linux) and paste any red errors. Remove anything personal first.
+      render: text

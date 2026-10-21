@@ -1,0 +1,12 @@
+{
+  "name": "mass-tweet-deleter",
+  "version": "1.3.0",
+  "private": true,
+  "description": "Delete all your posts, replies and reposts on X. Browser extension, no API key.",
+  "license": "MIT",
+  "scripts": {
+    "test": "node --test",
+    "lint": "npx --yes web-ext@8 lint --source-dir extension",
+    "zip": "cd extension && zip -qr ../mass-tweet-deleter-extension.zip ."
+  }
+}

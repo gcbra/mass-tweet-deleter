@@ -1,11 +1,14 @@
 // Run with: node --test
 const test = require('node:test')
 const assert = require('node:assert')
-const { parseArchive, deleteAll } = require('./delete-tweets.js')
+const { parseArchive, deleteAll } = require('./extension/delete-tweets.js')
 
 test('parseArchive reads tweets.js and tweet-headers.js', () => {
-  assert.deepStrictEqual(parseArchive('window.YTD.tweets.part0 = [{"tweet":{"id_str":"11","full_text":"a = b"}},{"tweet":{"id_str":"22"}}]'), ['11', '22'])
-  assert.deepStrictEqual(parseArchive('window.YTD.tweet_headers.part0 = [{"tweet":{"tweet_id":"33"}}]'), ['33'])
+  assert.deepStrictEqual(parseArchive('window.YTD.tweets.part0 = [{"tweet":{"id_str":"11","full_text":"a = b"}},{"tweet":{"id_str":"22"}}]'), [
+    { id: '11', text: 'a = b' },
+    { id: '22', text: '' },
+  ])
+  assert.deepStrictEqual(parseArchive('window.YTD.tweet_headers.part0 = [{"tweet":{"tweet_id":"33"}}]'), [{ id: '33', text: '' }])
   assert.deepStrictEqual(parseArchive('window.YTD.tweets.part0 = []'), [])
   assert.throws(() => parseArchive('window.YTD.like.part0 = [{"like":{"tweetId":"1"}}]'), /not a tweets file/)
   assert.throws(() => parseArchive('console.log("hi")'), /not a tweets file/)

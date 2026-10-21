@@ -1,0 +1,21 @@
+# Push a tag like v1.3.0 to publish a release with the extension zip attached.
+name: Release
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: npm test
+      - name: Check the tag matches the manifest version
+        run: test "v$(node -p "require('./extension/manifest.json').version")" = "$GITHUB_REF_NAME"
+      - run: npm run zip
+      - run: gh release create "$GITHUB_REF_NAME" mass-tweet-deleter-extension.zip extension/delete-tweets.js --title "$GITHUB_REF_NAME" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
