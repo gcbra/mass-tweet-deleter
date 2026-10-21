@@ -71,6 +71,71 @@
     return { deleted, failed }
   }
 
+  // No-archive mode: walks your profile's Replies tab (x.com/<handle>/with_replies) as X renders it,
+  // deletes your own posts through the API and undoes reposts with X's own Undo repost button.
+  // shortcut: X only lists roughly your newest 3,200 posts per visit; scanning again reaches older ones.
+  async function scanProfile(handle, { sleep, signal, onProgress, ...opts }) {
+    const waitFor = async (selector, tries = 30) => {
+      for (let t = 0; t < tries && !signal?.aborted; t++) {
+        const el = document.querySelector(selector)
+        if (el) return el
+        await sleep(100)
+      }
+    }
+    const page = document.scrollingElement
+    const seen = new Set()
+    let deleted = 0
+    const failed = []
+    await waitFor('article[data-testid="tweet"]', 150)
+    for (let idle = 0; idle < 3 && !signal?.aborted; ) {
+      const own = [], reposts = []
+      for (const art of document.querySelectorAll('article[data-testid="tweet"]')) {
+        // The post's timestamp links to /<author>/status/<id>.
+        const [, author, id] = art.querySelector('a[href*="/status/"] time')?.closest('a')?.getAttribute('href')?.match(/^\/(\w+)\/status\/(\d+)/) ?? []
+        if (!id || seen.has(id)) continue
+        seen.add(id)
+        if (author.toLowerCase() === handle.toLowerCase()) own.push([id, art])
+        else if (art.querySelector('[data-testid="unretweet"]')) reposts.push([id, art])
+      }
+      if (own.length) {
+        const r = await deleteAll(own.map(([id]) => id), {
+          ...opts, sleep, signal,
+          onProgress: (_, d, f) => onProgress?.(deleted + failed.length + d + f, deleted + d, failed.length + f),
+        })
+        deleted += r.deleted
+        failed.push(...r.failed)
+        own.forEach(([, art]) => (art.style.opacity = '0.3'))
+      }
+      for (const [id, art] of reposts) {
+        if (signal?.aborted) break
+        art.querySelector('[data-testid="unretweet"]')?.click()
+        const undo = await waitFor('[data-testid="unretweetConfirm"]')
+        if (undo) {
+          undo.click()
+          deleted++
+          art.style.opacity = '0.3'
+        } else {
+          failed.push(id)
+          document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+        }
+        onProgress?.(deleted + failed.length, deleted, failed.length)
+        await sleep(800)
+      }
+      if (page.scrollTop + innerHeight < page.scrollHeight - 50) {
+        scrollBy(0, innerHeight * 0.8) // step down so X renders every post on the way
+        await sleep(400)
+        idle = 0
+      } else {
+        // At the bottom: wait for X to load more, give up after 3 quiet rounds.
+        const height = page.scrollHeight
+        scrollTo(0, height)
+        for (let t = 0; t < 40 && page.scrollHeight === height && !signal?.aborted; t++) await sleep(100)
+        idle = page.scrollHeight === height && !own.length && !reposts.length ? idle + 1 : 0
+      }
+    }
+    return { deleted, failed }
+  }
+
   const CSS = `
     :host { all: initial; position: fixed; top: 16px; right: 16px; z-index: 2147483647;
       --bg: #fff; --fg: #0f1419; --muted: #536471; --line: #cfd9de; --soft: #f7f9f9; --accent: #1d9bf0; --danger: #f4212e; --ok: #00ba7c }
@@ -107,10 +172,22 @@
     .error { color: var(--danger); font-size: 14px; margin-top: 10px }
     .check { display: flex; gap: 10px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer }
     .check input { margin-top: 3px; accent-color: var(--danger) }
+    .option { display: block; width: 100%; margin-top: 10px; padding: 14px; text-align: left; background: transparent; color: var(--fg);
+      border: 1px solid var(--line); border-radius: 12px; font: inherit; cursor: pointer }
+    .option:hover { background: var(--soft) }
+    .option.main { border: 2px solid var(--fg) }
+    .option strong, .option span { display: block }
+    .field { display: block; margin-bottom: 12px; font-weight: 600 }
+    .field input { display: block; width: 100%; margin-top: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+      background: var(--bg); color: var(--fg); font: inherit }
     progress { width: 100%; height: 8px; margin: 4px 0 12px; appearance: none; border: 0; border-radius: 9999px; background: var(--soft); overflow: hidden }
     progress::-webkit-progress-bar { background: var(--soft) }
     progress::-webkit-progress-value { background: var(--accent) }
-    progress::-moz-progress-bar { background: var(--accent) }`
+    progress::-moz-progress-bar { background: var(--accent) }
+    progress:not([value]) { background: linear-gradient(90deg, var(--soft) 30%, var(--accent) 50%, var(--soft) 70%) 0 0 / 300% 100%; animation: slide 1.4s linear infinite }
+    progress:not([value])::-webkit-progress-bar { background: transparent }
+    @keyframes slide { from { background-position: 100% 0 } to { background-position: 0 0 } }
+    @media (prefers-reduced-motion: reduce) { progress { animation: none !important } }`
 
   const HTML = `
     <section role="dialog" aria-labelledby="title">
@@ -128,8 +205,28 @@
         <button id="skip" class="link">Already signed in? Continue</button>
       </div>
 
-      <div data-view="pick" hidden>
+      <div data-view="choose" hidden>
         <p class="account" id="account"></p>
+        <button id="choose-scan" class="option main">
+          <strong>Delete everything on my profile</strong>
+          <span class="muted">No archive needed. Scrolls through your profile and deletes your posts, replies and reposts.</span>
+        </button>
+        <button id="choose-archive" class="option">
+          <strong>Use my X archive</strong>
+          <span class="muted">Faster, and reaches very old posts. Needs the archive file X sends you.</span>
+        </button>
+      </div>
+
+      <div data-view="scan" hidden>
+        <label class="field">Your X handle <input id="handle" autocomplete="off" spellcheck="false" placeholder="@yourname"></label>
+        <p class="muted">This opens your profile's Replies tab, scrolls to the end and deletes every post, reply and repost by you. Keep the tab open while it runs.</p>
+        <label class="check"><input id="scan-agree" type="checkbox"> I understand deleted posts can't be recovered.</label>
+        <button id="scan-go" class="btn danger" disabled>Delete all my posts</button>
+        <button class="btn ghost back">Back</button>
+        <p id="scan-error" class="error" role="alert"></p>
+      </div>
+
+      <div data-view="pick" hidden>
         <ol>
           <li><a href="https://x.com/settings/download_your_data" target="_blank" rel="noopener">Download your X archive</a> and unzip it. X can take a day to prepare it.</li>
           <li>Choose <code>data/tweets.js</code>. Big accounts: also pick <code>tweets-part1.js</code>, <code>tweets-part2.js</code>...</li>
@@ -139,6 +236,7 @@
           <strong>Choose files</strong> or drop them here
         </label>
         <p id="pick-error" class="error" role="alert"></p>
+        <button class="btn ghost back">Back</button>
       </div>
 
       <div data-view="confirm" hidden>
@@ -150,7 +248,7 @@
       </div>
 
       <div data-view="run" hidden>
-        <p class="big">Deleting...</p>
+        <p class="big" id="run-title">Deleting...</p>
         <progress id="bar" aria-label="Deletion progress"></progress>
         <p id="run-status" role="status" aria-live="polite"></p>
         <p id="eta" class="muted"></p>
@@ -189,12 +287,16 @@
       const handle = document.querySelector('[data-testid="AppTabBar_Profile_Link"]')?.getAttribute('href')?.slice(1)
       if (!cookie('twid') && !handle) return
       $('account').textContent = handle ? `Signed in as @${handle}` : 'Signed in to X'
-      if (view === 'login') show('pick')
+      if (handle && !$('handle').value) $('handle').value = '@' + handle
+      if (view === 'login') show('choose')
     }
     show('login')
     checkAccount()
     const poll = setInterval(checkAccount, 1500)
-    $('skip').onclick = () => ($('account').textContent = 'Using your current X session', show('pick'))
+    $('skip').onclick = () => ($('account').textContent = 'Using your current X session', show('choose'))
+    $('choose-scan').onclick = () => show('scan')
+    $('choose-archive').onclick = () => show('pick')
+    ui.querySelectorAll('.back').forEach(b => (b.onclick = () => show('choose')))
 
     $('close').onclick = () => {
       clearInterval(poll)
@@ -225,40 +327,52 @@
     drop.ondragleave = () => drop.classList.remove('over')
     drop.ondrop = e => (e.preventDefault(), e.stopPropagation(), drop.classList.remove('over'), load(e.dataTransfer.files))
     $('agree').onchange = e => ($('go').disabled = !e.target.checked)
-    $('back').onclick = $('again').onclick = () => show('pick')
+    $('scan-agree').onchange = e => ($('scan-go').disabled = !e.target.checked)
+    $('back').onclick = () => show('pick')
     $('stop').onclick = () => controller?.abort()
 
     const keepOpen = e => (e.preventDefault(), (e.returnValue = ''))
-    $('go').onclick = async () => {
+    const run = async (mode, handle) => {
+      const archive = mode === 'archive'
       controller = new AbortController()
       const { signal } = controller
       const started = Date.now()
-      $('bar').max = ids.length
-      $('bar').value = 0
-      $('run-status').textContent = $('eta').textContent = $('note').textContent = ''
+      $('run-title').textContent = archive ? 'Deleting...' : `Deleting @${handle}'s posts...`
+      if (archive) {
+        $('bar').max = ids.length
+        $('bar').value = 0
+      } else $('bar').removeAttribute('value') // unknown total: animated bar
+      $('run-status').textContent = $('note').textContent = ''
+      $('eta').textContent = 'Keep this tab open.'
       $('close').hidden = true
       addEventListener('beforeunload', keepOpen)
       show('run')
+      const opts = {
+        csrf: cookie('ct0'),
+        signal,
+        // Stop also cuts short a rate-limit wait.
+        sleep: ms => new Promise(done => {
+          const t = setTimeout(done, ms)
+          signal.addEventListener('abort', () => (clearTimeout(t), done()), { once: true })
+        }),
+        log: (...args) => (console.log(...args), ($('note').textContent = args.filter(x => typeof x === 'string').join(' '))),
+        onProgress: (done, d, f) => {
+          $('run-status').textContent = `${d.toLocaleString()} deleted, ${f.toLocaleString()} failed`
+          if (!archive) return
+          $('bar').value = done
+          $('run-status').textContent = `${done.toLocaleString()} of ${ids.length.toLocaleString()}: ` + $('run-status').textContent
+          const mins = Math.ceil(((Date.now() - started) / done) * (ids.length - done) / 60000)
+          $('eta').textContent = done < ids.length ? `About ${mins} min left. Keep this tab open.` : ''
+        },
+      }
       try {
-        const { deleted, failed } = await deleteAll(ids, {
-          csrf: cookie('ct0'),
-          signal,
-          // Stop also cuts short a rate-limit wait.
-          sleep: ms => new Promise(done => {
-            const t = setTimeout(done, ms)
-            signal.addEventListener('abort', () => (clearTimeout(t), done()), { once: true })
-          }),
-          log: (...args) => (console.log(...args), ($('note').textContent = args.filter(x => typeof x === 'string').join(' '))),
-          onProgress: (done, d, f) => {
-            $('bar').value = done
-            $('run-status').textContent = `${done.toLocaleString()} of ${ids.length.toLocaleString()}: ${d.toLocaleString()} deleted, ${f.toLocaleString()} failed`
-            const mins = Math.ceil(((Date.now() - started) / done) * (ids.length - done) / 60000)
-            $('eta').textContent = done < ids.length ? `About ${mins} min left. Keep this tab open.` : ''
-          },
-        })
+        const { deleted, failed } = await (archive ? deleteAll(ids, opts) : scanProfile(handle, opts))
         $('done-title').textContent = signal.aborted ? 'Stopped' : 'All done'
-        $('done-text').textContent = `${deleted.toLocaleString()} tweets deleted.` +
-          (failed.length ? ` ${failed.length.toLocaleString()} could not be deleted (usually already gone). Their IDs are in the browser console.` : '')
+        $('done-text').textContent = `${deleted.toLocaleString()} posts deleted.` +
+          (failed.length ? ` ${failed.length.toLocaleString()} could not be deleted (usually already gone). Their IDs are in the browser console.` : '') +
+          (archive || signal.aborted ? '' : deleted + failed.length
+            ? ' X only shows your newest ~3,200 posts at a time, so scan again to catch older ones.'
+            : ` No posts by @${handle} were found. Check the handle is yours.`)
         if (failed.length) console.log('Mass Tweet Deleter, failed tweet IDs:', failed)
       } catch (err) {
         $('done-title').textContent = 'Stopped with an error'
@@ -268,9 +382,31 @@
         controller = null
         $('close').hidden = false
         removeEventListener('beforeunload', keepOpen)
+        $('again').textContent = archive ? 'Delete more' : 'Scan again'
+        // A fresh page load makes X list the posts that are left.
+        $('again').onclick = archive ? () => show('choose') : () => startScan(handle, true)
         show('done')
       }
     }
+    $('go').onclick = () => run('archive')
+
+    // The profile scan runs on x.com/<handle>/with_replies. Getting there reloads the page,
+    // so the request is kept in sessionStorage and picked up when the panel opens again.
+    const SCAN_KEY = 'mass-tweet-deleter-scan'
+    const onRepliesTab = handle => location.pathname.replace(/\/$/, '').toLowerCase() === `/${handle}/with_replies`.toLowerCase()
+    const startScan = (handle, reload) => {
+      if (onRepliesTab(handle) && !reload) return run('scan', handle)
+      sessionStorage.setItem(SCAN_KEY, handle)
+      location.assign(`/${handle}/with_replies`)
+    }
+    $('scan-go').onclick = () => {
+      const handle = $('handle').value.trim().replace(/^@/, '')
+      if (!/^\w{1,15}$/.test(handle)) return ($('scan-error').textContent = 'Enter your X handle, like @yourname.')
+      startScan(handle)
+    }
+    const pending = sessionStorage.getItem(SCAN_KEY)
+    sessionStorage.removeItem(SCAN_KEY)
+    if (pending && onRepliesTab(pending)) run('scan', pending)
   }
 
   if (typeof window === 'undefined') module.exports = { parseArchive, deleteAll }
